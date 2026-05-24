@@ -441,14 +441,14 @@ body{font-family:var(--fm);font-size:15px;color:var(--text);display:flex;justify
     <div class="game-tagline">Every great detective starts somewhere. Today, that's you.</div>
     <div class="quote-box">
       <div class="quote-text">
-        <b>A note from Sherlock Holmes:</b><br>
-        "Every detective begins with their first case. Sharpen your eye. Trust the small details. The truth is hiding in the shadows — find it."
+        <b>From the Detective's Handbook:</b><br>
+        "Every great detective begins with a first case. Sharpen your eye. Trust the small details. The truth is hiding in the shadows — find it."
       </div>
     </div>
     <div id="intro-pb" class="pb-line">📁 CASES SOLVED: <span id="intro-pb-val">0</span></div>
     <button class="btn-main" onclick="show('casebook')">Start Playing →</button>
     <button class="btn-ghost" onclick="openSettings()" style="margin-bottom:6px">SOUND</button>
-    <div class="ver-line">DET. JR · v23.11 · SEASON 1</div>
+    <div class="ver-line">DET. JR · v23.12 · SEASON 1</div>
   </div>
 </div>
 
@@ -1498,7 +1498,7 @@ let G={
   hints:3,hintStage:0,timerLeft:6,timerMax:6,
   gs:'playing',curEv:null,opts:[],rev:new Set(),
   notifAsked:true,pb:0,totalSolved:0,
-  chapStates:{},
+  chapStates:{},_chapBanked:{},
 };
 
 // ── BOOT ──────────────────────────────────────────────────────────────────────
@@ -1570,7 +1570,7 @@ function buildCasebook(){
       const locked=ci>0&&!isChapSolved(cas.id,cas.chapters[ci-1].id);
       const cls='chap-node'+(locked?' locked':solved?' solved':' available');
       const dots=ch.evidence.map((_,i)=>{
-        const st=G.chapStates[ch.id];
+        const st=G.chapStates[chapKey(cas.id,ch.id)];
         const r=st&&st.results&&st.results[i];
         return`<div class="ev-dot${r?r.won?' won':' lost':''}"></div>`;
       }).join('');
@@ -1582,7 +1582,7 @@ function buildCasebook(){
     });
     const heroHtml = heroSrc ? `
       <div class="case-hero" style="position:relative;width:100%;height:130px;overflow:hidden;border-bottom:1px solid #2A2418">
-        <img src="${heroSrc}" alt="" style="width:100%;height:100%;object-fit:cover;object-position:center 45%;display:block"/>
+        <img src="${heroSrc}" alt="" decoding="async" onload="this.style.opacity=1" style="width:100%;height:100%;object-fit:cover;object-position:center 45%;display:block;opacity:0;transition:opacity .35s ease-out"/>
         <div style="position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0) 40%,rgba(12,10,6,0.85) 100%)"></div>
         ${allSolved ? `<img src="assets/F7_solved_stamp.png" alt="" style="position:absolute;top:8px;right:8px;width:64px;height:64px;object-fit:contain;opacity:0.95;filter:drop-shadow(0 0 12px rgba(160,24,24,0.6))"/>` : ''}
       </div>` : '';
@@ -1593,7 +1593,17 @@ function buildCasebook(){
     div.appendChild(card);
   });
 }
-function isChapSolved(cid,chid){return G.chapStates[chid]&&G.chapStates[chid].solved;}
+// v23.12: chapter ids ('ch1'..) repeat across cases, so chapState/score keys MUST
+// be scoped by case — otherwise solving Case 1 Ch.1 falsely marks Case 2/3 Ch.1.
+function chapKey(caseId,chapId){return caseId+':'+chapId;}
+function isChapSolved(cid,chid){const k=chapKey(cid,chid);return !!(G.chapStates[k]&&G.chapStates[k].solved);}
+// v23.12 #3: cumulative score, no retry double-count. Remove the points this chapter
+// already added to the running total before a (re)start, so replaying replaces them.
+function rollbackChapterScore(){
+  const ck=G.caseIdx+':'+G.chapIdx;
+  if(G._chapBanked&&G._chapBanked[ck])G.score=Math.max(0,G.score-G._chapBanked[ck]);
+  if(G._chapBanked)G._chapBanked[ck]=0;
+}
 function openChap(ci,chi){G.caseIdx=ci;G.chapIdx=chi;loadBrief();}
 function viewChap(ci,chi){
   G.caseIdx=ci;G.chapIdx=chi;
@@ -1606,11 +1616,12 @@ function isCaseSolved(ci){return CASES[ci].chapters.every(ch=>isChapSolved(CASES
 // ── BRIEF — skipped, go straight to game ─────────────────────────────────────
 function loadBrief(){
   // Brief screen removed — show a quick overlay then start immediately
+  rollbackChapterScore();   // v23.12 #3: re-entering a chapter replaces its points, never stacks
   G.puzzleIdx=0;G.results=[];G.chapCollected=[];
   G.hints=3;G.hintStage=0;
   showChapterIntro();
 }
-function startChapter(){G.puzzleIdx=0;G.results=[];G.chapCollected=[];loadPuzzle();}
+function startChapter(){rollbackChapterScore();G.puzzleIdx=0;G.results=[];G.chapCollected=[];loadPuzzle();}
 
 // Brief replaced by a 2-second in-game overlay
 function showChapterIntro(){
@@ -1739,7 +1750,10 @@ const WRONG_POOLS = {
   mark:     ['Handprint','Pawprint','Smudge','Scratch','Stain','Crack','Dent','Spill'],
   message:  ['Postcard','Flag','Sign','Phone','Bell','Whistle','Stamp','Poster'],
   newspaper:['Map','Comic Book','Poster','Menu','Photo','Drawing','Ticket','Flyer'],
-  programme:['Ticket','Poster','Menu','Map','Flyer','Banner','Sign','Card'],
+  // v23.12 #5: was all flat paper rectangles (Poster/Banner/Sign/Card/Flyer/Menu) —
+  // indistinguishable from a programme even when revealed. Now distinct silhouettes so
+  // shape alone disambiguates; keep one flat item (Ticket) for plausibility.
+  programme:['Ticket','Mask','Rose','Candle','Crown','Fan','Bottle','Key'],
   // v23.11: 'Chest' dropped — the new School-Trunk art reads as a chest, and
   // b_trunk now uses this pool; a "Chest" decoy would be an unfair near-match.
   safe:     ['Cabinet','Drawer','Cupboard','Basket','Jar','Crate','Barrel','Bucket'],
@@ -1815,13 +1829,25 @@ function pickAnswer(a){
   const th=document.getElementById('g-torchhint');if(th)th.classList.remove('show');
   if(a===G.curEv.name)doCorrect();else doWrong(a);
 }
+// v23.12 #1 backstop: the chips route their TAP through here (not pickAnswer directly),
+// so a stray click landing within 400ms of a torch lift — the iOS phantom-click after a
+// drag — is dropped. Real play always has a longer gap (sweep → study → tap). Direct
+// pickAnswer() callers (game logic, tests) bypass this guard intentionally.
+function onAnswerTap(a){
+  if(performance.now()-(G._lastTorchEnd||0)<400)return;
+  pickAnswer(a);
+}
 
 function doCorrect(){
   stopTimer();G.gs='ok';G.pickedWrong=null;
   AUDIO.sfx('sfx_correct');
   const pct=G.timerLeft/G.timerMax;
   const pts=Math.round(G.curEv.pts*(pct>.75?1:pct>.5?.8:pct>.25?.6:.4));
-  G.score+=pts;G.streak++;if(G.streak>G.bestStreak)G.bestStreak=G.streak;
+  G.score+=pts;
+  // v23.12 #3: bank this chapter's points (keyed by case+chapter index) so a retry
+  // can roll them back instead of stacking — see rollbackChapterScore().
+  {const _ck=G.caseIdx+':'+G.chapIdx;G._chapBanked[_ck]=(G._chapBanked[_ck]||0)+pts;}
+  G.streak++;if(G.streak>G.bestStreak)G.bestStreak=G.streak;
   if(G.streak%5===0)G.hints++;
   G.chapCollected.push(G.curEv.id);
   G.results.push({ev:G.curEv,won:true,pts});
@@ -1930,7 +1956,7 @@ function renderAnswers(){
     // as their second wrong). G.revealAnswer is set by the v23 doWrong wrapper.
     if(G.gs==='wrong'&&a===G.curEv.name&&G.revealAnswer)btn.classList.add('ok');
     if(G.gs==='timeout')btn.classList.add('timeout');
-    btn.onclick=()=>pickAnswer(a);
+    btn.onclick=()=>onAnswerTap(a);   // v23.12 #1: routed via guard (drops the post-torch phantom click)
     div.appendChild(btn);
   });
 }
@@ -2237,11 +2263,12 @@ function buildCaseOpts(wrongId=null){
 function guessCrime(opt){
   const cas=CASES[G.caseIdx];const ch=cas.chapters[G.chapIdx];
   if(opt.correct){
-    if(!G.chapStates[ch.id])G.chapStates[ch.id]={};
-    G.chapStates[ch.id].solved=true;
-    G.chapStates[ch.id].collected=G.chapCollected.length;
-    G.chapStates[ch.id].score=G.score;
-    G.chapStates[ch.id].results=[...G.results];
+    const ck=chapKey(cas.id,ch.id);
+    if(!G.chapStates[ck])G.chapStates[ck]={};
+    G.chapStates[ck].solved=true;
+    G.chapStates[ck].collected=G.chapCollected.length;
+    G.chapStates[ck].score=G.score;
+    G.chapStates[ck].results=[...G.results];
     G.totalCollected+=G.chapCollected.length;
     const isLast=G.chapIdx===cas.chapters.length-1;
     if(isLast){
@@ -2449,6 +2476,7 @@ function preloadAssets() {
     'assets/W1_title_screen.png',
     'assets/C1-1_holmes_study_evidence.png',
     'assets/C2-2_adler_bedroom.png',
+    'assets/C2-3_empty_stage.png',   // v23.12 #4: Case 002 cover — was un-preloaded, flashed black
     'assets/C3-1_window_letter.png',
     'assets/F1_casebook_closed.png',
     'assets/F2_casebook_red_label.png',
@@ -2747,7 +2775,10 @@ function paintTorch(x, y, isInit, radius) {
       tCtx.fillStyle = "rgba(0,0,0,1)";
       tCtx.fillRect(0, 0, 280, 280);
       var now = Date.now();
-      var FADE_MS = 2400;
+      // v23.12 #2: slow fade (~9s, was 2.4s) so a child can sweep, then study the
+      // whole revealed object before choosing. The 600-point cap holds ~10s of
+      // sweeping, so points persist the full window rather than being dropped early.
+      var FADE_MS = 9000;
       var pts = window._torchPoints || [];
       var alive = false;
       tCtx.globalCompositeOperation = "destination-out";
@@ -2821,8 +2852,13 @@ function setupTorch(){
       G.revealPlayed = true;
     }
   };
-  const up=()=>{
+  const up=e=>{
+    // v23.12 #1 (the gate): cancel the touch's default so iOS does NOT synthesize a
+    // compatibility "click" after a torch drag. Without this, a sweep that lifts over
+    // an answer chip fired that chip → a wrong answer. Picture = torch only.
+    if(e&&e.cancelable)e.preventDefault();
     if(!down)return;down=false;
+    G._lastTorchEnd=performance.now();   // stamp ONLY after a real torch drag/tap (not a stray mouseleave)
     // v23.8 tap-to-illuminate: a quick tap with little movement lights a more
     // generous spot than a drag dab, so young hands that can't sustain a drag
     // still reveal a usable area. It still fades per the torch model.
@@ -2830,9 +2866,10 @@ function setupTorch(){
       paintTorch(lastX,lastY,false,TAP_TORCH_R);revealAt(lastX,lastY,TAP_TORCH_R);
       if(!G.revealPlayed){ AUDIO.sfx('sfx_reveal',0.85); G.revealPlayed=true; }
     }
-    ft=setTimeout(()=>dark(tCtx),6000);
+    // v23.12 #2: no 6s hard-dark — revealed areas now fade slowly on their own (FADE_MS).
   };
-  tc.addEventListener('touchstart',go,{passive:false});tc.addEventListener('touchmove',mv,{passive:false});tc.addEventListener('touchend',up);
+  tc.addEventListener('touchstart',go,{passive:false});tc.addEventListener('touchmove',mv,{passive:false});
+  tc.addEventListener('touchend',up,{passive:false});tc.addEventListener('touchcancel',up,{passive:false});
   tc.addEventListener('mousedown',go);tc.addEventListener('mousemove',mv);tc.addEventListener('mouseup',up);tc.addEventListener('mouseleave',up);
 }
 
