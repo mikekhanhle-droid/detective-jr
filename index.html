@@ -315,6 +315,17 @@ body{font-family:var(--fm);font-size:15px;color:var(--text);display:flex;justify
   </div>
 </div>
 
+<!-- LEAVE-CHAPTER CONFIRM — guards against an accidental tap losing progress -->
+<div class="overlay" id="leave-ov" style="background:rgba(6,4,4,.92);z-index:210;display:none;align-items:center;justify-content:center">
+  <div class="ov-card">
+    <div class="ov-ic">🏠</div>
+    <div class="ov-title">LEAVE CHAPTER?</div>
+    <div class="ov-body">You'll go back to the Casebook to pick a case.<br>This chapter starts fresh next time — that's okay!</div>
+    <button class="ov-yes" onclick="doLeaveChapter()">BACK TO CASES</button>
+    <button class="ov-no" onclick="closeLeave()">keep playing</button>
+  </div>
+</div>
+
 <!-- CHAPTER INTRO OVERLAY — 3 second atmospheric intro over game screen -->
 <div class="overlay" id="chapter-intro-ov" style="background:#060404;z-index:150;overflow:hidden">
   <!-- Atmospheric chapter background -->
@@ -478,7 +489,11 @@ body{font-family:var(--fm);font-size:15px;color:var(--text);display:flex;justify
 <!-- GAME -->
 <div id="screen-game" class="screen">
   <div class="hud">
-    <div><div class="hud-lbl">SCORE</div><div class="hud-score" id="g-score">0</div></div>
+    <div style="display:flex;align-items:flex-end;gap:10px">
+      <div class="hint-btn" id="g-home-btn" onclick="askLeaveChapter()"
+           style="cursor:pointer;font-size:16px" title="Back to cases">🏠</div>
+      <div><div class="hud-lbl">SCORE</div><div class="hud-score" id="g-score">0</div></div>
+    </div>
     <div class="hud-center">
       <div class="case-pill" id="g-case-pill">CASE 001 · CH.1</div>
       <div class="puzzle-dots" id="g-dots"></div>
@@ -2918,6 +2933,14 @@ function coinShower(){
   }
   setTimeout(()=>{cs.style.display='none';cs.innerHTML='';},4500);
 }
+// ── LEAVE CHAPTER ─────────────────────────────────────────────────────────────
+// In-game 🏠 button → confirm → back to the casebook. The countdown is harmless
+// off the game screen (timerTick guards on inGame()), and re-entering a chapter
+// resets it (loadBrief restarts the chapter), so we only switch screens here.
+function askLeaveChapter(){ document.getElementById('leave-ov').style.display='flex'; }
+function closeLeave(){ document.getElementById('leave-ov').style.display='none'; }
+function doLeaveChapter(){ closeLeave(); show('casebook'); }
+
 // ── SETTINGS UI ───────────────────────────────────────────────────────────────
 function openSettings(){
   const ov = document.getElementById('settings-ov');
